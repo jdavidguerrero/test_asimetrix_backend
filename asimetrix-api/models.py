@@ -113,9 +113,10 @@ class Data(db.Model):
     __tablename__ = 'data'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    timestamp = db.Column(db.String())
+    ts = db.Column(db.String())
     sensor_id = db.Column(db.Integer())
     value = db.Column(db.Integer())
+    date = db.Column(db.DateTime(timezone=False))
 
 
     def __init__(self, timestamp, sensor_id, value ):
@@ -131,5 +132,6 @@ class Data(db.Model):
             'id': self.id, 
             'timestamp': self.timestamp,
             'sensor_id': self.sensor_id,
-            'value':str(self.value)
+            'value':str(self.value),
+            'date':self.date
             } 
