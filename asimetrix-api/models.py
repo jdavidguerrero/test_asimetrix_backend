@@ -31,7 +31,7 @@ class Company(db.Model):
             'name': self.name,
             'email': self.email,
             'role': self.role,
-            'status':self.status
+            
             }
 
 class Farm(db.Model):

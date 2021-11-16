@@ -6,18 +6,19 @@ from flask_jwt_extended import JWTManager,create_access_token,jwt_required, get_
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from models import Company, Farm, Barn, Sensor, Data
-import datetime
+from datetime import timedelta
 import sys
 from flask_cors import CORS
 import json
-
+from operator import itemgetter
+from itertools import groupby
 
 app = Flask(__name__)
 CORS(app)
 app.config.from_object(os.environ['APP_SETTINGS'])
 app.config['JSON_SORT_KEYS'] = False
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
 db.init_app(app)  
 jwt = JWTManager(app)
 
@@ -65,7 +66,8 @@ def login():
      
     if check_password_hash(company.password, password):  
         access_token = create_access_token(identity=company.id)
-        return jsonify({ "status": 200, "token": access_token.decode('utf8'), "company_id": company.id, "name":company.name,"role":company.role })
+        #return jsonify({ "status": 200, "token": access_token.decode('utf8'), "company_id": company.id, "name":company.name,"role":company.role })
+        return jsonify({ "status": 200, "token": access_token, "company_id": company.id, "name":company.name,"role":company.role })
     return make_response('could not verify',  401, {'"message": "Verify Data"'})
 
 @app.route("/create_client", methods=['POST'])
@@ -87,9 +89,19 @@ def create_client():
         )
         db.session.add(company)
         db.session.commit()
-        return jsonify({"message":"Client added. company id={}".format(company.id)})
+        result = app.response_class(
+        response=json.dumps({"status":200,"message":"Client added. company id={}".format(company.id)}),
+        status=200,
+        mimetype='application/json'
+         )
+        return result
     except Exception as e:
-	    return jsonify({"error":str(e)})
+        response = app.response_class(
+        response=str(e),
+        status=500,
+        mimetype='application/json'
+         )
+        return response
 
 @app.route("/getall")
 @jwt_required()
@@ -107,10 +119,19 @@ def remove_client(id_):
         company=Company.query.filter_by(id=id_).first()
         company.status=0
         db.session.commit()
-        return jsonify({"message":"Client wiht company id={} was removed".format(company.id)})
+        result = app.response_class(
+        response=json.dumps({"status":200,"message":"Client removed. company id={}".format(company.id)}),
+        status=200,
+        mimetype='application/json'
+         )
+        return result
     except Exception as e:
-	    return(str(e))
-
+        response = app.response_class(
+        response=str(e),
+        status=500,
+        mimetype='application/json'
+         )
+        return response
 @app.route("/getFarms/<id_company>")
 @jwt_required()
 def getFarms(id_company):
@@ -184,9 +205,7 @@ def getSensgetSensorDataByDateorData(date):
         date_data = date
         sql = text("select s.name,d.sensor_id, d.id, d.value,cast(d.date as varchar) from public.data d join public.sensor s on s.id = d.sensor_id where date between :x and CAST( :x AS TIMESTAMP(0)) + INTERVAL '1 day'")
         params ={"x": date_data}
-        print
         result = db.engine.execute(sql, params)
-        #print (result.first())
         data = []
         keys = ('type','sensor_id','id','value','date')
         for row in result:
@@ -205,5 +224,185 @@ def getSensgetSensorDataByDateorData(date):
          )
         return response
 
+@app.route("/getInitData/<id_company>")
+@jwt_required()
+def getInitData(id_company):
+    try:
+        id_company = id_company
+        sql = text(
+                """select 
+                count(distinct f.id) as Farms,
+                count(distinct b.id) as Barns,
+                count( distinct s.id) as Sensors
+                from public.company c
+                join public.farm f on f.company_id = c.id 
+                join public.barn b on b.farm_id = f.id 
+                join public.sensor s on s.barn_id = b.id 
+                where c.id = :x
+                group by 
+                c.id """
+        )
+        sql2= text(
+            """select 
+                s.name as Type,
+                cast(round(cast(AVG(d.value)as numeric),2)as varchar) as Value
+                from public.data d
+                left join public.sensor s on d.sensor_id = s.id 
+                left join public.barn b on s.barn_id = b.id 
+                left join public.farm f on b.farm_id = f.id 
+                left join public.company c on f.company_id = c.id 
+                where c.id = :x and d.value >0
+                group by 
+                s.name"""
+        )
+        params ={"x": id_company}
+        result = db.engine.execute(sql, params)
+        result2 = db.engine.execute(sql2, params)
+        count = []
+        average = []
+        keys_count = ('farms','barns','sensors')
+        for row in result:
+            count.append(dict(zip(keys_count,row)))
+        keys_avg = ('type', 'value')
+        for row in result2:
+            average.append(dict(zip(keys_avg,row)))
+        data = {
+            "count": count,
+            "average": average
+        }
+        response = app.response_class(
+        response=json.dumps(data),
+        status=200,
+        mimetype='application/json'
+         )
+        return response
+    except Exception as e:
+        response = app.response_class(
+        response=str(e),
+        status=500,
+        mimetype='application/json'
+         )
+        return response
+	    
+@app.route("/getDataPieTemp/<id_company>")
+@jwt_required()
+def getDataPieTemp(id_company):
+    try:
+        id_company = id_company
+        sql = text(
+                """select 
+                    f.name as farm,
+                    AVG(d.value) as value
+                    from public.data d
+                    left join public.sensor s on d.sensor_id = s.id 
+                    left join public.barn b on s.barn_id = b.id 
+                    left join public.farm f on b.farm_id = f.id 
+                    left join public.company c on f.company_id = c.id 
+                    where c.id = :x and s.name = 'temp' and d.value >0
+                    group by 
+                    f.name """
+        )
+        
+        params ={"x": id_company}
+        result = db.engine.execute(sql, params)
+        data = []
+        keys= ('name','y')
+        for row in result:
+            data.append(dict(zip(keys,row)))
+        response = app.response_class(
+        response=json.dumps(data),
+        status=200,
+        mimetype='application/json'
+         )
+        return response
+    except Exception as e:
+        response = app.response_class(
+        response=str(e),
+        status=500,
+        mimetype='application/json'
+         )
+        return response
+
+@app.route("/getDataPieHum/<id_company>")
+@jwt_required()
+def getDataPieHum(id_company):
+    try:
+        id_company = id_company
+        sql = text(
+                """select 
+                    f.name as farm,
+                    AVG(d.value) as value
+                    from public.data d
+                    left join public.sensor s on d.sensor_id = s.id 
+                    left join public.barn b on s.barn_id = b.id 
+                    left join public.farm f on b.farm_id = f.id 
+                    left join public.company c on f.company_id = c.id 
+                    where c.id = :x and s.name = 'hum' and d.value >0
+                    group by 
+                    f.name """
+        )
+        
+        params ={"x": id_company}
+        result = db.engine.execute(sql, params)
+        data = []
+        keys= ('name','y')
+        for row in result:
+            data.append(dict(zip(keys,row)))
+        response = app.response_class(
+        response=json.dumps(data),
+        status=200,
+        mimetype='application/json'
+         )
+        return response
+    except Exception as e:
+        response = app.response_class(
+        response=str(e),
+        status=500,
+        mimetype='application/json'
+         )
+        return response
+
+@app.route("/getDataLine/<id_company>")
+@jwt_required()
+def getDataLine(id_company):
+    try:
+        id_company = id_company
+        sql = text(
+                """select 
+                    d.sensor_id as id,
+                    REPLACE(concat(d.ts,',',d.value), '"','')as value
+                    from public.data d
+                    left join public.sensor s on d.sensor_id = s.id 
+                    left join public.barn b on s.barn_id = b.id 
+                    left join public.farm f on b.farm_id = f.id 
+                    left join public.company c on f.company_id = c.id 
+                    where  c.id = :x and date between '2021-10-21 00:00' and CAST('2021-10-21' AS TIMESTAMP(0)) + INTERVAL '12 hour' and s.name ='temp'
+                    group by
+                    d.sensor_id,
+                    d.ts,
+                    d.value """
+        )
+        
+        params ={"x": id_company}
+        result = db.engine.execute(sql, params)
+        data = []
+        data_result=[]
+        keys= ('id', 'value')
+        for row in result:
+            data.append(dict(zip(keys,row)))
+       
+        response = app.response_class(
+        response=json.dumps(data),
+        status=200,
+        mimetype='application/json'
+         )
+        return response
+    except Exception as e:
+        response = app.response_class(
+        response=str(e),
+        status=500,
+        mimetype='application/json'
+         )
+        return response
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=80)

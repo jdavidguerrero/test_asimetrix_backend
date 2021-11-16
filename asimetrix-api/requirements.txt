@@ -1,6 +1,6 @@
 alembic==1.7.4
 backports.entry-points-selectable==1.1.0
-click==8.0.3
+click==7.1.2
 distlib==0.3.3
 et-xmlfile==1.1.0
 filelock==3.3.2
@@ -10,8 +10,8 @@ Flask-SQLAlchemy==2.4.1
 greenlet==1.1.2
 importlib-metadata==4.8.1
 importlib-resources==5.4.0
-itsdangerous==2.0.1
-Jinja2==3.0.2
+itsdangerous==1.1.0
+Jinja2==2.11.3
 Mako==1.1.5
 MarkupSafe==2.0.1
 numpy==1.21.4
@@ -24,10 +24,10 @@ pytz==2021.3
 six==1.16.0
 SQLAlchemy==1.4.26
 virtualenv==20.10.0
-Werkzeug==2.0.2
+Werkzeug==1.0.1
 xlrd==2.0.1
 zipp==3.6.0
 PyJWT
-flask-jwt-extended
+flask-jwt-extended==4.3.1 
 datetime 
-flask-cors 
+flask-cors==3.0.10
